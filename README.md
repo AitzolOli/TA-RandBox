@@ -11,6 +11,7 @@ On TAO-LaSOT it matches the known-class accuracy of RandBox's 10,000-proposal in
 
 Bachelor's thesis in Telecommunication Engineering at the University of the Basque Country (UPV/EHU), carried out
 at [TECNALIA](https://www.tecnalia.com) (2023-2024), with follow-up results presented at TECNALIA in 2025.
+**Management Solutions Award for the best final project in Digital Transformation.**
 
 <p align="center">
   <img src="docs/figures/tao_lasot_basketball.gif" width="49%" alt="Detections on a TAO-LaSOT video, outdoor basketball court">
@@ -197,11 +198,13 @@ results/logs/              log of the original RandBox-500 run on LaSOT (2024)
 
 - Every frame of a video is run (the temporal proposals need them), but only annotated frames are scored.
 - `tools/prepare_tao.py --label-mapping thesis` (default) reproduces the label mapping used for the reported
-  results. In it, a TAO category without a COCO equivalent is looked up in the COCO -> OWOD table by its raw id, so
-  a few non-COCO categories with ids below 80 become known classes instead of "unknown". `--label-mapping fixed`
-  corrects this; its numbers are not comparable with the tables above.
+  results. In it, a TAO category without a COCO equivalent is looked up in the COCO -> OWOD table by its raw id.
+  On the TAO training annotations this affects a single category: 36 *apricot* boxes in YFCC100M are labelled
+  *dog* instead of *unknown*. ArgoVerse, BDD, Charades and LaSOT are identical under both mappings.
+  `--label-mapping fixed` labels those boxes *unknown*.
 - Known classes with no annotation in a subset are left out of K-mAP when the model detects them (their AP is
-  undefined); a known class with neither annotations nor detections counts as AP 0, as in the original evaluator.
+  undefined); a known class with neither annotations nor detections would count as AP 0, as in the original
+  evaluator. In the LaSOT log every known class has detections, so this does not occur there.
 
 ## Citation
 
@@ -224,9 +227,8 @@ results/logs/              log of the original RandBox-500 run on LaSOT (2024)
 }
 ```
 
-## Acknowledgements and license
+## License
 
-Thesis supervised by Miren Nekane Bilbao (UPV/EHU) and carried out at TECNALIA. Built on
-[RandBox](https://github.com/Yanghao-Wang/RandBox), [DiffusionDet](https://github.com/ShoufaChen/DiffusionDet),
-[Sparse R-CNN](https://github.com/PeizeSun/SparseR-CNN) and [Detectron2](https://github.com/facebookresearch/detectron2);
-see [NOTICE.md](NOTICE.md) for what comes from where and under which terms.
+Built on [RandBox](https://github.com/Yanghao-Wang/RandBox), [DiffusionDet](https://github.com/ShoufaChen/DiffusionDet),
+[Sparse R-CNN](https://github.com/PeizeSun/SparseR-CNN) and [Detectron2](https://github.com/facebookresearch/detectron2).
+For research and non-commercial use; see [NOTICE.md](NOTICE.md) for what comes from where and under which terms.
