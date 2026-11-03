@@ -428,13 +428,13 @@ class RandBox(nn.Module):
         if self.use_focal or self.use_fed_loss:
             scores = torch.sigmoid(box_cls)
             labels = torch.arange(self.num_classes, device=self.device). \
-                unsqueeze(0).repeat(box_pred.shape[1]*multiple_sample, 1).flatten(0, 1)#cambio a box_shape
+                unsqueeze(0).repeat(box_pred.shape[1]*multiple_sample, 1).flatten(0, 1)  # one label per (box, class) pair
 
             for i, (scores_per_image, box_pred_per_image, image_size) in enumerate(zip(
                     scores, box_pred, image_sizes
             )):
                 result = Instances(image_size)
-                scores_per_image, topk_indices = scores_per_image.flatten(0, 1).topk(box_pred.shape[1]*multiple_sample, sorted=False)#cambio, al shape de las bbox predichas
+                scores_per_image, topk_indices = scores_per_image.flatten(0, 1).topk(box_pred.shape[1]*multiple_sample, sorted=False)  # keep as many as there are boxes
                 labels_per_image = labels[topk_indices]
                 box_pred_per_image = box_pred_per_image.view(-1, 1, 4).repeat(1, self.num_classes, 1).view(-1, 4)
                 box_pred_per_image = box_pred_per_image[topk_indices]

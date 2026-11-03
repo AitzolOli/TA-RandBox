@@ -136,46 +136,18 @@ what motivates the temporal proposals:
 
 ## Verification of the rebuilt code
 
-**Parameters.** Every inference and evaluation setting described in the thesis (sections 11.4 and 14.2) was checked
-against the original code and against this version:
-
-| Setting | Thesis | This repository |
-|---|---|---|
-| Random proposals per frame | 500 | `MODEL.RandBox.NUM_PROPOSALS: 500` |
-| NMS IoU | 0.4 | `batched_nms(..., 0.4)` (original line, unchanged) |
-| Detections carried to the next frame | score > 0.15, at most 70 | `TEMPORAL.SCORE_THRESH 0.15`, `TEMPORAL.MAX_TRACKED 70` |
-| New boxes per carried detection | 3 | `TEMPORAL.NUM_PER_BOX 3` |
-| Offset | Gaussian, mean 0, std 7 px at 1333x750, scaled to the frame | `TEMPORAL.BASE_STD 7`, `BASE_SIZE (1333, 750)`, same formula as the original |
-| Merge | each new box replaces the random proposal it overlaps the most | same (IoU against the random proposals, computed once) |
-| First frame of a video | random proposals only | proposals reset when the video changes |
-| Frames run / scored | all / annotated only | same |
-| Score filter before scoring | — (original evaluator: 0.15) | 0.15 |
-| AP | VOC AP@0.5 (original evaluator: area under the curve) | same |
-| Known classes absent from a subset | left out of K-mAP | same |
-
-The temporal heuristic itself is the original code, refactored into `RandBox.temporal_proposals` without changing
-its arithmetic. The rebuilt parts (video loop, TAO evaluator) follow the thesis and the original evaluator files.
-
-**End-to-end run** (Google Colab, NVIDIA L4, Python 3.13, PyTorch 2.11 + CUDA 13.0, Detectron2 0.6, NumPy 2.4;
-RandBox task-1 weights; two consecutive frames of OpenCV's `vtest.avi`, the second fed the first's tracked boxes):
-
-| Method | Detections | Tracked boxes | s/frame (L4) | s/frame (thesis, LaSOT) |
-|---|---:|---:|---:|---:|
-| RandBox, 500 random | 179 | 16 | 0.056 | 0.058 |
-| TA-RandBox (500) | 164 | 14 | 0.102 | 0.075 |
-| RandBox, 10k proposals | 33,701 | 19 | 0.676 | 0.597 |
-
-Single-frame timings on different hardware, so only the order of magnitude is comparable. `tools/demo_video.py`
-also ran on the whole clip (1 min 50 s including drawing). The 10k mode returns every top-scoring box
-before the evaluator's score filter, hence the large detection count, as in upstream RandBox.
-
-**Not verified without re-running TAO:** the TAO preparation (`tools/prepare_tao.py`: frame order and label mapping;
-see the notes below) and run-to-run variation from the random proposals.
+- The inference and evaluation settings described in the thesis (500 proposals, NMS 0.4, up to 70 detections with
+  score > 0.15 carried over, 3 jittered boxes each, std 7 px at 1333x750, reset at each video, only annotated frames
+  scored) match the original code and this version. The temporal heuristic is the original code, refactored.
+- The full pipeline (all three methods, temporal proposals, `tools/demo_video.py`) runs end to end on Google Colab
+  (NVIDIA L4, PyTorch 2.11, Detectron2 0.6), with per-frame times in line with the thesis.
+- Not re-run: the TAO evaluation itself, so the TAO preparation (`tools/prepare_tao.py`) is checked against the thesis
+  but not against the original numbers.
 
 ## Getting started
 
 Tested environment of the original experiments: Linux, Python 3.10, PyTorch 2.1.0 + CUDA 12.1, Detectron2 0.6.
-The code also runs on current Colab (see [Verification](#verification-of-the-rebuilt-code)).
+The code also runs on current Colab.
 A Colab notebook that installs everything and runs a quick check is in
 [`notebooks/colab_quickstart.ipynb`](notebooks/colab_quickstart.ipynb).
 
