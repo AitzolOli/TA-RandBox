@@ -7,20 +7,16 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-import cv2
-from detectron2.utils.visualizer import Visualizer
-
 from detectron2.layers import batched_nms
 from detectron2.modeling import META_ARCH_REGISTRY, build_backbone, detector_postprocess
 
 from detectron2.structures import Boxes, ImageList, Instances
+from torchvision.ops import box_iou
 
 from .loss import SetCriterionDynamicK, HungarianMatcherDynamicK
 from .head import DynamicHead
 from .util.box_ops import box_cxcywh_to_xyxy, box_xyxy_to_cxcywh
 from .util.misc import nested_tensor_from_tensor_list
-from randbox.test_time_augmentation import RandBoxWithTTA
-from torchvision.ops import box_iou
 
 __all__ = ["RandBox"]
 
@@ -74,6 +70,13 @@ class RandBox(nn.Module):
         self.hidden_dim = cfg.MODEL.RandBox.HIDDEN_DIM
         self.num_heads = cfg.MODEL.RandBox.NUM_HEADS
         self.sampling_method = cfg.MODEL.RandBox.SAMPLING_METHOD
+        temporal = cfg.MODEL.RandBox.TEMPORAL
+        self.temporal_enabled = temporal.ENABLED
+        self.temporal_num_per_box = temporal.NUM_PER_BOX
+        self.temporal_base_std = temporal.BASE_STD
+        self.temporal_base_size = tuple(temporal.BASE_SIZE)
+        self.temporal_score_thresh = temporal.SCORE_THRESH
+        self.temporal_max_tracked = temporal.MAX_TRACKED
         # Build Backbone.
         self.backbone = build_backbone(cfg)
         self.size_divisibility = self.backbone.size_divisibility
@@ -171,57 +174,52 @@ class RandBox(nn.Module):
                 extract(self.sqrt_recipm1_alphas_cumprod, t, x_t.shape)
         )
 
-                   
-    #añado prev_bboxes   
-    def model_predictions(self, prev_bboxes, backbone_feats, images_whwh, x, t, x_self_cond=None, clip_x_start=False,sample_i=0):
-        # self.sampling_method = 'Random_'#por si quiero 10000 propuestas
+    def temporal_proposals(self, x_boxes, prev_boxes, images_whwh):
+        """
+        Inject temporal proposals into the random ones (the video-stream heuristic of this repository).
+
+        Args:
+            x_boxes (Tensor): (1, N, 4) proposals for the current frame, absolute (x1, y1, x2, y2).
+            prev_boxes (Tensor or None): (M, 4) confident detections of the previous frame, same coordinates.
+            images_whwh (Tensor): (1, 4) input size as (w, h, w, h).
+
+        Each previous detection spawns NUM_PER_BOX copies shifted by Gaussian noise whose std (BASE_STD at
+        BASE_SIZE) scales with the frame size, i.e. the expected motion of an object between two frames.
+        Each copy replaces the random proposal it overlaps the most (IoU computed against the random
+        proposals before any replacement; when two copies pick the same proposal the later one wins), so
+        the proposal budget stays N: already-detected objects are followed by the temporal boxes and the
+        remaining random boxes keep exploring for new, possibly unknown, objects.
+        """
+        if prev_boxes is None or prev_boxes.shape[0] == 0:
+            return x_boxes
+        assert x_boxes.shape[0] == 1, "temporal proposals are defined for one frame per batch"
+
+        width, height = images_whwh[0][0].item(), images_whwh[0][1].item()
+        base_width, base_height = self.temporal_base_size
+        std = self.temporal_base_std * (width / base_width + height / base_height) / 2
+
+        new_boxes = prev_boxes.repeat_interleave(self.temporal_num_per_box, dim=0)
+        new_boxes = new_boxes + torch.randn_like(new_boxes) * std
+
+        ious = box_iou(new_boxes, x_boxes[0])
+        for i, best in enumerate(ious.argmax(dim=1).tolist()):
+            x_boxes[0][best] = new_boxes[i]
+        return x_boxes
+
+    def model_predictions(self, backbone_feats, images_whwh, x, t, x_self_cond=None, clip_x_start=False, sample_i=0,
+                          prev_boxes=None):
         if self.sampling_method == 'Random':
-            x_boxes = torch.clamp(x[:, :self.num_proposals, :], min=-1 * self.scale, max=self.scale)#cambio, solo cojo 500, SIEMPRE, LUEGO LE AÑADO LAS 20 "NO RANDOM"
+            x_boxes = torch.clamp(x, min=-1 * self.scale, max=self.scale)
             x_boxes = ((x_boxes / self.scale) + 1) / 2
         else:
-            
             x_boxes = self.x_dic.to(x.device)[self.num_proposals*sample_i:self.num_proposals*(sample_i+1),:]
             x_boxes = ((x_boxes / self.scale) + 1) / 2
-        
+
         x_boxes = box_cxcywh_to_xyxy(x_boxes)
         x_boxes = x_boxes * images_whwh[:, None, :]
-        # AÑADO, VOY GENERANDO BBOXES MÁS PRECISAS (LAS TENGO QUE METER AL HEAD???)
-        if prev_bboxes is not None: 
-            if  prev_bboxes.shape[0] != 0: #por si no tengo buenas predicciones en la anterior
-                num_new_boxes = 3
-                mean = 0 
-                #genero std en base a las dimensiones de la imagen
-                base_width = 1333
-                base_height = 750
-                base_std = 7
-                current_width = images_whwh[0][0].item()
-                current_height = images_whwh[0][1].item()
-                
-                # Calculate the proportional factors for width and height
-                width_factor = current_width / base_width
-                height_factor = current_height / base_height
-                
-                # Use the average of the width and height factors to maintain aspect ratio
-                proportional_factor = (width_factor + height_factor) / 2
-                
-                # Calculate the new std
-                new_std = base_std * proportional_factor
-                # hasta aquí
-                std_dev = new_std
-                new_boxes = []
-                for bbox in prev_bboxes:
-                    for _ in range(num_new_boxes):
-                        offsets = torch.randn(4, device=self.device) * std_dev
-                        new_bbox = bbox + offsets
-                        new_boxes.append(new_bbox)
+        if self.temporal_enabled:
+            x_boxes = self.temporal_proposals(x_boxes, prev_boxes, images_whwh)
 
-                    new_boxes_tensor = torch.stack(new_boxes)#.unsqueeze(0)
-                # x_boxes = torch.cat([x_boxes, new_boxes_tensor], dim=1)
-                ious = box_iou(new_boxes_tensor, x_boxes[0])   
-                for i,iou in enumerate(ious):
-                    _ ,ind = iou.topk(1)
-                    x_boxes[0][ind] = new_boxes_tensor[i]
-        #HASTA AQUÍ
         outputs_class, outputs_coord = self.head(backbone_feats, x_boxes, None)
         x_start = outputs_coord[-1]  # (batch, num_proposals, 4) predict boxes: absolute coordinates (x1, y1, x2, y2)
         x_start = x_start / images_whwh[:, None, :]
@@ -233,11 +231,9 @@ class RandBox(nn.Module):
         return ModelPrediction(pred_noise, x_start), outputs_class, outputs_coord
 
     @torch.no_grad()
-    def _sample(self, batched_inputs, best_bboxes_prev_iter, backbone_feats, images_whwh, images, clip_denoised=True, do_postprocess=True):
+    def _sample(self, batched_inputs, backbone_feats, images_whwh, images, clip_denoised=True, do_postprocess=True,
+                prev_boxes=None):
         batch = images_whwh.shape[0]
-        # if best_bboxes_prev_iter is not None:
-        #     shape = (batch, self.num_proposals + best_bboxes_prev_iter.shape[0] * 3, 4) #añado la shape de las bboxes que se suman, 5 es las bboxes que genero por cada bbox
-        # else:
         shape = (batch, self.num_proposals, 4)
         total_timesteps, sampling_timesteps, eta, objective = self.num_timesteps, self.sampling_timesteps, self._sampling_eta, self.objective
 
@@ -254,8 +250,9 @@ class RandBox(nn.Module):
             for time, time_next in time_pairs:
                 time_cond = torch.full((batch,), time, device=self.device, dtype=torch.long)
                 self_cond = x_start if self.self_condition else None
-                preds, class_cat, coord_cat = self.model_predictions(best_bboxes_prev_iter, backbone_feats, images_whwh, img, time_cond,
-                                                                             self_cond, clip_x_start=clip_denoised)
+                preds, class_cat, coord_cat = self.model_predictions(backbone_feats, images_whwh, img, time_cond,
+                                                                     self_cond, clip_x_start=clip_denoised,
+                                                                     prev_boxes=prev_boxes)
                 pred_noise, x_start = preds.pred_noise, preds.pred_x_start
         else:
             for sample_step in range(self.multiple_sample):
@@ -263,8 +260,9 @@ class RandBox(nn.Module):
                     time_cond = torch.full((batch,), time, device=self.device, dtype=torch.long)
                     self_cond = x_start if self.self_condition else None
 
-                    preds, outputs_class, outputs_coord = self.model_predictions(best_bboxes_prev_iter, backbone_feats, images_whwh, img, time_cond,
-                                                                  self_cond, clip_x_start=clip_denoised,sample_i=sample_step)
+                    preds, outputs_class, outputs_coord = self.model_predictions(backbone_feats, images_whwh, img, time_cond,
+                                                                  self_cond, clip_x_start=clip_denoised, sample_i=sample_step,
+                                                                  prev_boxes=prev_boxes)
                 if sample_step == 0:
                     class_cat = outputs_class
                     coord_cat=outputs_coord
@@ -287,11 +285,12 @@ class RandBox(nn.Module):
             result.scores = scores_per_image
             result.pred_classes = labels_per_image
             results = [result]
+            tracked_boxes = None
         else:
-            output = {'pred_logits': class_cat[-1], 'pred_boxes': coord_cat[-1]}#-1 devuelve el último elemento
+            output = {'pred_logits': class_cat[-1], 'pred_boxes': coord_cat[-1]}  # last head stage
             box_cls = output["pred_logits"]
             box_pred = output["pred_boxes"]
-            results, best_bboxes_current_iter = self.inference(box_cls, box_pred, images.image_sizes)#añado las mejores bboxes
+            results, tracked_boxes = self.inference(box_cls, box_pred, images.image_sizes)
         if do_postprocess:
             processed_results = []
             for results_per_image, input_per_image, image_size in zip(results, batched_inputs, images.image_sizes):
@@ -299,10 +298,10 @@ class RandBox(nn.Module):
                 width = input_per_image.get("width", image_size[1])
                 r = detector_postprocess(results_per_image, height, width)
                 processed_results.append({"instances": r})
-            return processed_results, best_bboxes_current_iter
+            return processed_results, tracked_boxes
+        return results, tracked_boxes
 
-
-    def forward(self, batched_inputs, best_bboxes_prev_iter, do_postprocess=True):
+    def forward(self, batched_inputs, do_postprocess=True, prev_boxes=None, return_tracked=False):
         """
         Args:
             batched_inputs: a list, batched outputs of :class:`DatasetMapper` .
@@ -316,6 +315,9 @@ class RandBox(nn.Module):
 
                 * "height", "width" (int): the output resolution of the model, used in inference.
                   See :meth:`postprocess` for details.
+            prev_boxes (Tensor or None): inference with MODEL.RandBox.TEMPORAL.ENABLED only: the boxes this
+                model returned for the previous frame of the same video (None on a video's first frame).
+            return_tracked (bool): inference only: also return the boxes to feed to the next frame.
         """
         images, images_whwh = self.preprocess_image(batched_inputs)
         if isinstance(images, (list, torch.Tensor)):
@@ -329,12 +331,10 @@ class RandBox(nn.Module):
             features.append(feature)
 
         # Prepare Proposals.
-        #LO PONGO PARA EVALUAR SOLO
-        self.training=False
         if not self.training:
-            
-            results, best_bboxes_current_iter = self._sample(batched_inputs, best_bboxes_prev_iter, features, images_whwh, images)
-            return results, best_bboxes_current_iter
+            results, tracked_boxes = self._sample(batched_inputs, features, images_whwh, images,
+                                                  do_postprocess=do_postprocess, prev_boxes=prev_boxes)
+            return (results, tracked_boxes) if return_tracked else results
 
         if self.training:
             gt_instances = [x["instances"].to(self.device) for x in batched_inputs]
@@ -419,6 +419,7 @@ class RandBox(nn.Module):
         """
         assert len(box_cls) == len(image_sizes)
         results = []
+        tracked_boxes = None  # confident detections of the (last) image, the next frame's temporal proposals
 
         if self.sampling_method == 'Random':
             multiple_sample = 1
@@ -452,15 +453,11 @@ class RandBox(nn.Module):
                 result.pred_classes = labels_per_image
                 results.append(result)
 
-                #AÑADO PARA GENERAR BBOXES AL REDEDOR DE LAS MEJORES PREDICCIONES Y FILTRO HASTA UN MÁXIMO DE 100 PREDICCIONES
-                threshold = 0.15
-                filtered_bboxes = box_pred_per_image[scores_per_image > threshold]
+                # Boxes to follow in the next frame: detections above the score threshold, at most MAX_TRACKED
+                # (after NMS they come sorted by score, so these are the most confident ones).
+                tracked_boxes = box_pred_per_image[scores_per_image > self.temporal_score_thresh]
+                tracked_boxes = tracked_boxes[:self.temporal_max_tracked]
 
-                max_number_of_preds_per_image = 70
-                if max_number_of_preds_per_image:
-                    filtered_bboxes = filtered_bboxes[:max_number_of_preds_per_image]
-                #HASTA AQUÍ
-                
         else:
             # For each box we assign the best class or the second best if the best on is `no_object`.
             scores, labels = F.softmax(box_cls, dim=-1)[:, :, :-1].max(-1)
@@ -482,7 +479,7 @@ class RandBox(nn.Module):
                 result.pred_classes = labels_per_image
                 results.append(result)
 
-        return results, filtered_bboxes #devuelvo las filtered_bboxes
+        return results, tracked_boxes
 
     def preprocess_image(self, batched_inputs):
         """

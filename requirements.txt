@@ -1,0 +1,8 @@
+# Python dependencies besides PyTorch and Detectron2 (install those first, see README).
+# Environment of the original experiments: Python 3.10, PyTorch 2.1.0 + CUDA 12.1, Detectron2 0.6, NumPy 1.26.
+numpy<2
+opencv-python
+fvcore
+timm
+matplotlib
+pycocotools

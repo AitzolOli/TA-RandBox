@@ -57,8 +57,24 @@ def add_RandBox_config(cfg):
     # Inference
     cfg.MODEL.RandBox.USE_NMS = True
     cfg.MODEL.RandBox.M_STEP = 20
-    cfg.MODEL.RandBox.SAMPLING_METHOD = 'Random'
-    
+    # 'Random_' (upstream default): M_STEP x NUM_PROPOSALS boxes from a fixed 10^4 grid (10,000 boxes for 20 x 500).
+    # 'Random': NUM_PROPOSALS boxes drawn at random, the same way the model is trained.
+    cfg.MODEL.RandBox.SAMPLING_METHOD = 'Random_'
+
+    # Temporal proposals for video streams (this repository's contribution).
+    # On every frame after the first one of a video, each confident detection of the previous frame spawns
+    # NUM_PER_BOX jittered copies (Gaussian offsets, std BASE_STD px scaled to the frame size relative to
+    # BASE_SIZE), and each copy replaces the random proposal it overlaps the most. At most MAX_TRACKED
+    # detections with score > SCORE_THRESH are carried over, so with 500 proposals at most 210 are temporal
+    # and at least 290 stay random for exploration. Only used with SAMPLING_METHOD = 'Random'.
+    cfg.MODEL.RandBox.TEMPORAL = CN()
+    cfg.MODEL.RandBox.TEMPORAL.ENABLED = False
+    cfg.MODEL.RandBox.TEMPORAL.NUM_PER_BOX = 3
+    cfg.MODEL.RandBox.TEMPORAL.BASE_STD = 7.0
+    cfg.MODEL.RandBox.TEMPORAL.BASE_SIZE = (1333, 750)
+    cfg.MODEL.RandBox.TEMPORAL.SCORE_THRESH = 0.15
+    cfg.MODEL.RandBox.TEMPORAL.MAX_TRACKED = 70
+
     
     # Swin Backbones
     cfg.MODEL.SWIN = CN()

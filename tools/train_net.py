@@ -1,9 +1,12 @@
 """
-RandBox Training Script.
+RandBox Training Script (unchanged from RandBox, https://github.com/Yanghao-Wang/RandBox, except for the import
+path below). Trains and evaluates on the image OWOD splits (PASCAL VOC + COCO); see scripts/train_owod.sh.
 
 This script is a simplified version of the training script in detectron2/tools.
 """
 import os
+import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import itertools
 import weakref
 from typing import Any, Dict, List, Set
