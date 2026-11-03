@@ -227,8 +227,8 @@ results/logs/              log of the original RandBox-500 run on LaSOT (2024)
 }
 ```
 
-## License
+## Attribution
 
 Built on [RandBox](https://github.com/Yanghao-Wang/RandBox), [DiffusionDet](https://github.com/ShoufaChen/DiffusionDet),
-[Sparse R-CNN](https://github.com/PeizeSun/SparseR-CNN) and [Detectron2](https://github.com/facebookresearch/detectron2).
-For research and non-commercial use; see [NOTICE.md](NOTICE.md) for what comes from where and under which terms.
+[Sparse R-CNN](https://github.com/PeizeSun/SparseR-CNN) and [Detectron2](https://github.com/facebookresearch/detectron2);
+see [NOTICE.md](NOTICE.md) for what comes from where and under which terms.

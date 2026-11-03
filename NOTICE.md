@@ -1,4 +1,4 @@
-# Notice: origin of the code and terms of use
+# Notice: origin of the code
 
 This repository extends third-party research code. What comes from where:
 
@@ -10,11 +10,9 @@ This repository extends third-party research code. What comes from where:
 | `randbox/swintransformer.py` | [Swin Transformer](https://github.com/microsoft/Swin-Transformer) | MIT |
 | Pascal VOC AP code in `randbox/*evaluation.py` | [py-faster-rcnn](https://github.com/rbgirshick/py-faster-rcnn) (B. Hariharan), via ORE / OW-DETR | MIT |
 | Detection framework | [Detectron2](https://github.com/facebookresearch/detectron2) (dependency, not vendored) | Apache 2.0 |
-| Temporal proposals (`RandBox.temporal_proposals` and the `MODEL.RandBox.TEMPORAL` options), `randbox/video_inference.py`, `randbox/tao_owod_evaluation.py` (TAO adaptation), `tools/prepare_tao.py`, `tools/eval_tao.py`, `tools/demo_video.py`, `scripts/eval_tao.sh`, `notebooks/`, `docs/` | Aitzol Olivares Rad | see below |
+| Temporal proposals (`RandBox.temporal_proposals` and the `MODEL.RandBox.TEMPORAL` options), `randbox/video_inference.py`, `randbox/tao_owod_evaluation.py` (TAO adaptation), `tools/prepare_tao.py`, `tools/eval_tao.py`, `tools/demo_video.py`, `scripts/eval_tao.sh`, `notebooks/`, `docs/` | Aitzol Olivares Rad | |
 
-Because the code it builds on includes CC BY-NC 4.0 material and code with no stated license, this repository is
-shared **for research and non-commercial use only**, with attribution to the works above. The original
-contributions of this repository are offered under the same CC BY-NC 4.0 terms.
+No license is granted for this repository as a whole. The third-party parts above keep their own terms.
 
 Media in `docs/figures/` show frames of TAO / LaSOT videos ([taodataset.org](https://taodataset.org)), used here for
 illustration under those datasets' terms.
