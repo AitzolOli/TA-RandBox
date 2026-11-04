@@ -1,5 +1,8 @@
 # TA-RandBox: temporal random proposals for open-world object detection in video
 
+> Bachelor's thesis work from 2024. The code was cleaned up and documented in 2026; the method and the reported
+> results are those of the original work.
+
 TA-RandBox extends [RandBox](https://github.com/Yanghao-Wang/RandBox) (ICCV 2023), an open-world detector trained on
 random region proposals, to video. Instead of drawing fresh proposals for every frame, it re-seeds part of them
 around the previous frame's detections and keeps the rest random to keep finding new, possibly unknown, objects.
@@ -30,6 +33,29 @@ identical. TA-RandBox uses that temporal correlation. For every frame after the 
 
 At most 210 proposals follow already-detected objects and at least 290 keep exploring. Only inference changes: the
 weights are RandBox's released task-1 model (20 known PASCAL VOC classes).
+
+## Results on images: random proposals at inference
+
+RandBox uses random proposals only for training; at inference it switches to 10,000 predefined boxes. Evaluating
+it with just 500 random boxes, the same way it is trained, keeps most of its advantage over earlier open-world
+detectors at about a tenth of the cost. This is what motivated the video method.
+
+PASCAL VOC + COCO, task 1 (20 known classes, 60 unknown), 4,952 test images. Earlier methods as reported in the
+RandBox paper; RandBox rows from our own runs of its released model.
+
+| Method | K-mAP ↑ | U-R ↑ | WI ↓ | A-OSE ↓ | Inference time ↓ |
+|---|---:|---:|---:|---:|---:|
+| Faster R-CNN | 56.4 | - | 0.0699 | 13396 | |
+| Deformable DETR | 60.3 | - | 0.0608 | 33270 | |
+| ORE | 56.0 | 4.9 | 0.0621 | 10459 | |
+| OST | 56.2 | - | 0.0417 | 4889 | |
+| OW-DETR | 59.3 | 7.5 | 0.0521 | 7964 | |
+| RandBox, 10,000 predefined boxes (default) | **61.74** | **10.56** | **0.024** | 4498 | 45 min |
+| **RandBox, 500 random boxes** | 60.20 | 8.31 | 0.035 | **2938** | **4 min** |
+
+With 500 random boxes RandBox still has better unknown recall, Wilderness Impact and open-set error than every
+earlier method, and a K-mAP within 0.1 of Deformable DETR (which detects no unknowns), while inference is ~11x
+faster (2 GPUs).
 
 ## Results on TAO-LaSOT
 
